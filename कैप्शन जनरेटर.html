@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>कैप्शन जनरेटर</title>
+<style>
+  :root{--bg:#f4f5fb;--card:#fff;--ink:#161a2e;--mut:#5d6480;--line:#d6d9ec;--acc:#4f5fe8;--acc2:#0fb5a3;--accink:#fff}
+  @media (prefers-color-scheme:dark){:root{--bg:#0e1120;--card:#171b30;--ink:#eceefb;--mut:#a0a7c8;--line:#2b3152;--acc:#7b89ff;--acc2:#2dd4bf;--accink:#0e1120;color-scheme:dark}}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Noto Sans Devanagari","Mukta",system-ui,sans-serif}
+  main{max-width:780px;margin:0 auto;padding:16px 14px 40px}
+  h1{font-size:1.45rem;margin:4px 0 12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+  .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  label{display:grid;gap:4px;font-size:.86rem;color:var(--mut)}
+  input[type=text],input[type=password],select,textarea{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%;box-sizing:border-box}
+  input[type=range]{width:100%;accent-color:var(--acc)} input[type=color]{width:100%;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+  #drop{display:block;border:2px dashed var(--acc);border-radius:14px;padding:18px;text-align:center;font-weight:700;cursor:pointer;margin:10px 0;color:var(--ink)}
+  #drop.over{background:var(--line)}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+  .b{font:inherit;font-weight:600;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;text-decoration:none}
+  .b.p{background:var(--acc);color:var(--accink);border-color:transparent} .b.on{background:var(--acc2);color:var(--accink);border-color:transparent}
+  .b:disabled{opacity:.5;cursor:not-allowed}
+  .stage{background:#000;border-radius:12px;overflow:hidden;display:flex;justify-content:center}
+  canvas{max-width:100%;max-height:46vh;width:auto;height:auto;display:block}
+  #seek{width:100%;accent-color:var(--acc)} .time{margin-left:auto;color:var(--mut);font-variant-numeric:tabular-nums}
+  .para{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .para .ts{align-self:start;font-variant-numeric:tabular-nums}
+  .ln{display:grid;grid-template-columns:auto 74px 74px 1fr auto;gap:6px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line)}
+  .ln textarea{min-height:46px;resize:vertical} .ln input{padding:8px 4px;text-align:center}
+  @media (max-width:560px){.ln{grid-template-columns:auto 1fr 1fr auto}.ln textarea{grid-column:1/-1;order:5}}
+  progress{width:100%;accent-color:var(--acc2)} #status{min-height:1.4em;font-size:.92rem} #status.err{color:#d6322f}
+  small{color:var(--mut)} #rv{width:100%;max-height:50vh;border-radius:12px;background:#000}
+  :focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1>कैप्शन जनरेटर</h1>
+
+  <div class="card">
+    <div class="g">
+      <label>ElevenLabs API Key<input id="key" type="password" placeholder="sk_..." autocomplete="off"></label>
+      <label>मॉडल<select id="model"><option value="scribe_v2">Scribe v2 (नया)</option><option value="scribe_v1">Scribe v1</option></select></label>
+      <label>भाषा<select id="lang"><option value="">अपने आप पहचानो</option><option value="hin">हिंदी</option><option value="eng">English</option><option value="urd">उर्दू</option><option value="ben">बांग्ला</option><option value="mar">मराठी</option><option value="guj">गुजराती</option><option value="pan">पंजाबी</option><option value="tam">तमिल</option><option value="tel">तेलुगु</option></select></label>
+    </div>
+    <label id="drop"><input id="file" type="file" accept="audio/*,video/*" hidden><span id="droptxt">ऑडियो या वीडियो फ़ाइल चुनिए (या यहाँ खींचकर छोड़िए)</span></label>
+    <div class="row"><button class="b p" id="gen">कैप्शन बनाओ</button></div>
+    <progress id="gp" hidden></progress>
+    <div id="status" role="status"></div>
+    <small>फ़ाइल कैप्शन बनाने के लिए ElevenLabs को भेजी जाती है। API Key सिर्फ़ आपके ब्राउज़र में रहती है।</small>
+  </div>
+
+  <video id="v" playsinline preload="auto" style="position:fixed;left:-9999px;width:2px;height:2px"></video>
+  <div class="card" id="pv" hidden>
+    <div class="stage"><canvas id="cv" width="1280" height="720"></canvas></div>
+    <input id="seek" type="range" min="0" max="1" step="0.01" value="0" aria-label="जगह">
+    <div class="row"><button class="b p" id="play">▶ चलाओ</button><span class="time"><span id="cur">0:00.0</span> / <span id="dur">0:00.0</span></span></div>
+  </div>
+
+  <div class="card" id="res" hidden>
+    <div class="row">
+      <button class="b on" id="tabP">पैराग्राफ</button><button class="b" id="tabL">कैप्शन लाइनें (एडिट)</button>
+      <label style="margin-left:auto;min-width:170px">अक्षर प्रति लाइन: <span id="mxv">42</span><input id="mx" type="range" min="20" max="80" value="42"></label>
+    </div>
+    <div class="row">
+      <button class="b" id="cpT">टेक्स्ट कॉपी</button><button class="b" id="cpTs">समय के साथ कॉपी</button><button class="b" id="cpS">SRT कॉपी</button>
+      <button class="b" id="dSrt">SRT</button><button class="b" id="dVtt">VTT</button><button class="b" id="dTxt">TXT</button>
+    </div>
+    <div id="out"></div>
+  </div>
+
+  <div class="card" id="sty" hidden>
+    <b>वीडियो पर कैप्शन लगाओ</b>
+    <div class="g" style="margin-top:8px">
+      <label>साइज़: <span id="fsv">5.5</span>%<input id="fs" type="range" min="3" max="10" step="0.5" value="5.5"></label>
+      <label>जगह<select id="pos"><option value="bot">नीचे</option><option value="mid">बीच में</option><option value="top">ऊपर</option></select></label>
+      <label>स्टाइल<select id="bgs"><option value="box">काला बॉक्स</option><option value="out">आउटलाइन</option></select></label>
+      <label>रंग<input id="col" type="color" value="#ffffff"></label>
+      <label>मोटा अक्षर<input id="bold" type="checkbox" checked style="width:22px;height:22px"></label>
+    </div>
+    <div class="row"><button class="b p" id="burn">कैप्शन के साथ वीडियो बनाओ</button><button class="b" id="cancel" disabled>रोको</button></div>
+    <progress id="bp" value="0" max="1" hidden></progress>
+    <div id="result" hidden><video id="rv" controls playsinline></video><div class="row"><a id="dl" class="b p">⬇ वीडियो डाउनलोड करो</a></div></div>
+    <small>वीडियो असली समय में बनता है, इसलिए पूरी लंबाई जितना समय लगेगा। इस दौरान टैब सामने रखिए। ऑडियो फ़ाइल हो तो काले बैकग्राउंड पर कैप्शन वाला वीडियो बनेगा। Chrome में सबसे अच्छा चलता है।</small>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id), v = $('v'), cv = $('cv'), c = cv.getContext('2d'), num = id => +$(id).value;
+let file = null, url = '', fname = 'caption', dur = 0, words = [], caps = [], view = 'para';
+let exporting = false, recorder = null, chunks = [], cancelled = false, lastUrl = '', lastBlob = null, lastName = '', ac, gMon, dest;
+const msg = (t, e = false) => { $('status').textContent = t; $('status').className = e ? 'err' : ''; };
+const fmt = t => { t = Math.max(0, t); return Math.floor(t / 60) + ':' + (t % 60).toFixed(1).padStart(4, '0'); };
+const parseT = s => { const p = String(s).trim().replace(',', '.').split(':').map(Number); return p.some(isNaN) ? NaN : p.reduce((a, x) => a * 60 + x, 0); };
+const stamp = (t, sep) => { const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = Math.floor(t % 60), ms = Math.round((t % 1) * 1000); const p = (n, l = 2) => String(n).padStart(l, '0'); return `${p(h)}:${p(m)}:${p(s)}${sep}${p(Math.min(ms, 999), 3)}`; };
+try { $('key').value = localStorage.getItem('el_key') || ''; } catch (e) {}
+
+/* ---------- फ़ाइल ---------- */
+function load(f) {
+  if (!f) return; file = f; if (url) URL.revokeObjectURL(url);
+  url = URL.createObjectURL(f); v.src = url; fname = f.name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '');
+  $('droptxt').textContent = f.name + ' (' + (f.size / 1048576).toFixed(1) + ' MB) · बदलने के लिए दबाइए';
+}
+$('file').onchange = e => load(e.target.files[0]);
+['dragover', 'dragenter'].forEach(n => $('drop').addEventListener(n, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach(n => $('drop').addEventListener(n, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => load(e.dataTransfer.files[0]));
+v.onerror = () => msg('यह फ़ाइल प्लेयर में नहीं खुल सकी, पर कैप्शन फिर भी बन सकते हैं।', true);
+v.onloadedmetadata = () => {
+  dur = v.duration; $('pv').hidden = false; $('sty').hidden = false; $('seek').max = dur; $('dur').textContent = fmt(dur);
+  const w = v.videoWidth, h = v.videoHeight, k = w ? Math.min(1, 1280 / Math.max(w, h)) : 0;
+  cv.width = w ? (Math.round(w * k) & ~1) : 1280; cv.height = w ? (Math.round(h * k) & ~1) : 720;
+};
+
+/* ---------- कैप्शन बनाना (ElevenLabs Scribe) ---------- */
+$('gen').onclick = async () => {
+  const key = $('key').value.trim();
+  if (!key) return msg('API Key भरिए।', true);
+  if (!file) return msg('पहले फ़ाइल चुनिए।', true);
+  try { localStorage.setItem('el_key', key); } catch (e) {}
+  const fd = new FormData(); fd.append('file', file); fd.append('model_id', $('model').value);
+  fd.append('timestamps_granularity', 'word'); fd.append('tag_audio_events', 'false');
+  if ($('lang').value) fd.append('language_code', $('lang').value);
+  $('gen').disabled = true; $('gp').hidden = false; msg('कैप्शन बन रहे हैं… बड़ी फ़ाइल में कुछ मिनट लग सकते हैं।');
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', { method: 'POST', headers: { 'xi-api-key': key }, body: fd });
+    if (!r.ok) { let d = ''; try { const j = await r.json(); d = j.detail?.message || JSON.stringify(j.detail || j); } catch (e) {} throw new Error(r.status + ' ' + d); }
+    const j = await r.json(); words = (j.words || []).filter(w => !w.type || w.type === 'word');
+    if (!words.length) throw new Error('फ़ाइल में बोली गई आवाज़ नहीं मिली।');
+    buildCaps(); $('res').hidden = false; render(); msg(`तैयार: ${caps.length} कैप्शन (भाषा: ${j.language_code || '-'})`);
+  } catch (e) { msg(e instanceof TypeError ? 'इस होस्टेड पेज से ElevenLabs तक कनेक्शन ब्लॉक है। कैप्शन बनाने के लिए फ़ाइल अपने कंप्यूटर पर खोलिए।' : 'गड़बड़ हुई: ' + e.message, true); }
+  $('gen').disabled = false; $('gp').hidden = true;
+};
+function buildCaps() {
+  const max = num('mx'), out = []; let cur = null;
+  words.forEach((w, i) => {
+    if (!cur) cur = { s: w.start, e: w.end, t: '' };
+    cur.t += (cur.t ? ' ' : '') + w.text.trim(); cur.e = w.end;
+    const nx = words[i + 1], gap = nx ? nx.start - w.end : 99;
+    if (!nx || cur.t.length >= max || gap > .7 || (/[।.?!]$/.test(w.text.trim()) && cur.t.length > 12)) { out.push(cur); cur = null; }
+  });
+  caps = out;
+}
+function paras() {
+  const P = []; let cur = null;
+  caps.forEach((x, i) => {
+    if (!cur) cur = { s: x.s, e: x.e, t: x.t }; else { cur.t += ' ' + x.t; cur.e = x.e; }
+    const nx = caps[i + 1], gap = nx ? nx.s - x.e : 99;
+    if (!nx || gap > 1.2 || (cur.t.length > 220 && /[।.?!]$/.test(x.t)) || cur.t.length > 420) { P.push(cur); cur = null; }
+  });
+  return P;
+}
+$('mx').oninput = () => { $('mxv').textContent = num('mx'); };
+$('mx').onchange = () => { if (words.length) { buildCaps(); render(); } };
+
+/* ---------- लिस्ट दिखाना और एडिट ---------- */
+function render() {
+  $('tabP').classList.toggle('on', view === 'para'); $('tabL').classList.toggle('on', view === 'lines');
+  const out = $('out'); out.textContent = '';
+  if (view === 'para') {
+    paras().forEach(p => {
+      const d = document.createElement('div'); d.className = 'para';
+      const b = document.createElement('button'); b.className = 'b ts'; b.textContent = fmt(p.s); b.dataset.t = p.s;
+      const s = document.createElement('div'); s.textContent = p.t; d.append(b, s); out.append(d);
+    });
+  } else {
+    caps.forEach((x, i) => {
+      const d = document.createElement('div'); d.className = 'ln'; d.dataset.i = i;
+      d.innerHTML = '<button class="b sk" title="यहाँ से चलाओ">▶</button><input class="a" aria-label="शुरू"><input class="z" aria-label="अंत"><textarea aria-label="कैप्शन"></textarea><button class="b del" title="हटाओ">✕</button>';
+      d.querySelector('.a').value = fmt(x.s); d.querySelector('.z').value = fmt(x.e); d.querySelector('textarea').value = x.t; out.append(d);
+    });
+  }
+}
+$('tabP').onclick = () => { view = 'para'; render(); }; $('tabL').onclick = () => { view = 'lines'; render(); };
+$('out').addEventListener('click', e => {
+  const ts = e.target.closest('.ts'); if (ts) return seekPlay(+ts.dataset.t);
+  const ln = e.target.closest('.ln'); if (!ln) return; const i = +ln.dataset.i;
+  if (e.target.closest('.sk')) seekPlay(caps[i].s);
+  if (e.target.closest('.del')) { caps.splice(i, 1); render(); }
+});
+$('out').addEventListener('change', e => {
+  const ln = e.target.closest('.ln'); if (!ln) return; const x = caps[+ln.dataset.i];
+  if (e.target.matches('textarea')) x.t = e.target.value;
+  else { const t = parseT(e.target.value); if (!isNaN(t)) x[e.target.classList.contains('a') ? 's' : 'e'] = t; e.target.value = fmt(x[e.target.classList.contains('a') ? 's' : 'e']); }
+});
+
+/* ---------- कॉपी और डाउनलोड ---------- */
+const txtPlain = () => paras().map(p => p.t).join('\n\n');
+const txtTs = () => paras().map(p => `[${fmt(p.s)}] ${p.t}`).join('\n\n');
+const srt = () => caps.map((x, i) => `${i + 1}\n${stamp(x.s, ',')} --> ${stamp(x.e, ',')}\n${x.t}\n`).join('\n');
+const vtt = () => 'WEBVTT\n\n' + caps.map(x => `${stamp(x.s, '.')} --> ${stamp(x.e, '.')}\n${x.t}\n`).join('\n');
+async function copy(s, name) {
+  try { await navigator.clipboard.writeText(s); } catch (e) { const t = document.createElement('textarea'); t.value = s; document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); }
+  msg(name + ' कॉपी हो गया।');
+}
+const dlP = (async () => { try { return window.claude ? await window.claude.use('downloads') : null; } catch (e) { return null; } })();
+async function saveBlob(data, name) {
+  const cap = await dlP;
+  if (cap) {
+    if (!/\.(png|jpe?g|webp|gif|mp4|webm|mov|txt|json|md|csv|html|svg|pdf|zip)$/i.test(name)) name += '.txt';
+    try { await cap.save({ filename: name, data }); msg('सेव हो गया: ' + name); }
+    catch (e) { msg(e && e.code === 'declined' ? 'सेव रद्द हुआ।' : 'डाउनलोड नहीं हो सका (' + ((e && e.code) || '') + ')', true); }
+  } else { const a = document.createElement('a'); a.href = URL.createObjectURL(data); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+}
+function download(s, name) { saveBlob(new Blob([s], { type: 'text/plain;charset=utf-8' }), name); }
+$('cpT').onclick = () => copy(txtPlain(), 'टेक्स्ट'); $('cpTs').onclick = () => copy(txtTs(), 'समय वाला टेक्स्ट'); $('cpS').onclick = () => copy(srt(), 'SRT');
+$('dSrt').onclick = () => download(srt(), fname + '.srt'); $('dVtt').onclick = () => download(vtt(), fname + '.vtt'); $('dTxt').onclick = () => download(txtTs(), fname + '.txt');
+
+/* ---------- प्लेयर ---------- */
+function audioInit() {
+  if (ac) return; ac = new (window.AudioContext || window.webkitAudioContext)();
+  const s = ac.createMediaElementSource(v); gMon = ac.createGain(); dest = ac.createMediaStreamDestination();
+  s.connect(gMon); gMon.connect(ac.destination); s.connect(dest);
+}
+v.onplay = v.onpause = () => $('play').textContent = v.paused ? '▶ चलाओ' : '⏸ रोको';
+async function seekPlay(t) { if (exporting) return; audioInit(); await ac.resume(); v.currentTime = t; v.play(); }
+$('play').onclick = async () => { if (exporting) return; audioInit(); await ac.resume(); v.paused ? v.play() : v.pause(); };
+$('seek').oninput = e => { if (!exporting) v.currentTime = +e.target.value; };
+
+function drawCap(text) {
+  const W = cv.width, H = cv.height, fs = Math.round(H * num('fs') / 100);
+  c.font = `${$('bold').checked ? 700 : 500} ${fs}px "Noto Sans Devanagari","Mukta",system-ui,sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const lines = []; let l = '';
+  text.split(' ').forEach(w => { const x = l ? l + ' ' + w : w; if (c.measureText(x).width > W * .88 && l) { lines.push(l); l = w; } else l = x; });
+  lines.push(l);
+  const lh = fs * 1.3, bh = lines.length * lh, p = $('pos').value, y0 = p === 'top' ? H * .08 : p === 'mid' ? (H - bh) / 2 : H * .92 - bh;
+  lines.forEach((ln, i) => {
+    const y = y0 + i * lh + lh / 2;
+    if ($('bgs').value === 'box') { const w = c.measureText(ln).width + fs * .8; c.fillStyle = 'rgba(0,0,0,.68)'; c.fillRect(W / 2 - w / 2, y - lh / 2, w, lh); }
+    else { c.lineJoin = 'round'; c.lineWidth = fs * .22; c.strokeStyle = '#000'; c.strokeText(ln, W / 2, y); }
+    c.fillStyle = $('col').value; c.fillText(ln, W / 2, y);
+  });
+}
+function loop() {
+  const W = cv.width, H = cv.height, t = v.currentTime;
+  if (v.videoWidth) c.drawImage(v, 0, 0, W, H); else { const g = c.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#0c1650'); g.addColorStop(1, '#050a24'); c.fillStyle = g; c.fillRect(0, 0, W, H); }
+  const a = caps.find(x => t >= x.s && t < x.e); if (a && a.t) drawCap(a.t);
+  $('cur').textContent = fmt(t); if (document.activeElement !== $('seek')) $('seek').value = t;
+  if (exporting) { $('bp').value = dur ? t / dur : 0; if (v.ended || t >= dur - .05) stopBurn(); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+['fs'].forEach(i => $(i).oninput = () => $('fsv').textContent = num(i));
+
+/* ---------- वीडियो पर कैप्शन जलाना (एक्सपोर्ट) ---------- */
+$('burn').onclick = async () => {
+  if (exporting) return; if (!caps.length) return msg('पहले कैप्शन बनाइए।', true);
+  if (!window.MediaRecorder) return msg('यह ब्राउज़र एक्सपोर्ट सपोर्ट नहीं करता। Chrome इस्तेमाल कीजिए।', true);
+  audioInit(); await ac.resume(); v.pause(); cancelled = false; v.currentTime = 0;
+  await Promise.race([new Promise(r => v.addEventListener('seeked', r, { once: true })), new Promise(r => setTimeout(r, 1200))]);
+  exporting = true; gMon.gain.value = 0; $('burn').disabled = true; $('cancel').disabled = false; $('bp').hidden = false; $('result').hidden = true;
+  const tr = [...cv.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()];
+  const mime = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+  recorder = new MediaRecorder(new MediaStream(tr), mime ? { mimeType: mime, videoBitsPerSecond: Math.min(16e6, Math.round(cv.width * cv.height * 30 * .12)) } : {});
+  chunks = []; recorder.ondataavailable = e => e.data.size && chunks.push(e.data); recorder.onstop = finishBurn; recorder.start(500);
+  await v.play(); msg('वीडियो बन रहा है… टैब बंद मत कीजिए।');
+};
+function stopBurn() { if (recorder && recorder.state !== 'inactive') { v.pause(); recorder.stop(); } }
+function finishBurn() {
+  exporting = false; gMon.gain.value = 1; $('burn').disabled = false; $('cancel').disabled = true; $('bp').hidden = true; v.currentTime = 0;
+  if (cancelled) return msg('रोक दिया गया।');
+  const type = recorder.mimeType || 'video/webm', ext = type.includes('mp4') ? 'mp4' : 'webm';
+  lastBlob = new Blob(chunks, { type }); if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = URL.createObjectURL(lastBlob);
+  $('rv').src = lastUrl; $('dl').href = lastUrl; lastName = `${fname}_captions.${ext}`; $('dl').download = lastName; $('dl').onclick = e => { e.preventDefault(); saveBlob(lastBlob, lastName); }; $('result').hidden = false;
+  msg('तैयार! प्लेयर में देखिए और डाउनलोड दबाइए।'); $('result').scrollIntoView({ block: 'nearest' });
+}
+$('cancel').onclick = () => { cancelled = true; stopBurn(); };
+</script>
+</body>
+</html>
